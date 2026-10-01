@@ -1,0 +1,6 @@
+{
+	"Export Delivery Package": "Export Delivery Package",
+	"PCB Delivery": "PCB Delivery",
+	"PCB Delivery Export": "PCB Delivery Export",
+	"一键导出 Gerber、BOM 和坐标文件，可选原理图 PDF、STEP、交互式 BOM 与工程源文件；支持按 BOM 过滤坐标文件中不贴装的元件。": "Export Gerber, BOM and Pick & Place files in one click, with optional schematic PDF, STEP, interactive BOM and project source files. The CPL can be filtered against the BOM to remove unmounted components."
+}

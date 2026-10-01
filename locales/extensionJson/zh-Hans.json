@@ -1,0 +1,6 @@
+{
+	"Export Delivery Package": "一键导出",
+	"PCB Delivery": "PCB 交付",
+	"PCB Delivery Export": "PCB 一键交付",
+	"一键导出 Gerber、BOM 和坐标文件，可选原理图 PDF、STEP、交互式 BOM 与工程源文件；支持按 BOM 过滤坐标文件中不贴装的元件。": "一键导出 Gerber、BOM 和坐标文件，可选原理图 PDF、STEP、交互式 BOM 与工程源文件；支持按 BOM 过滤坐标文件中不贴装的元件。"
+}
