@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<!--
+  PCB Delivery Export — 导出设置窗口（sys_IFrame 内联框架）
+
+  ## 为什么存在这个文件
+  用户明确要求（真实反馈）：
+    1. 「选项不要使用下拉菜单的方式，就平铺到界面上就可以」
+       —— 官方 showSelectDialog(multiple) 在 3.2.149 客户端上渲染为**可折叠下拉**，
+          复选框被折叠、需要滚动，不满足要求；
+    2. 「路径添加一个浏览按钮」
+       —— 需要一个真正的按钮，而不是弹窗链。
+  官方 sys_IFrame.openIFrame 允许扩展加载自带 HTML 构建完全自定义窗口，
+  且官方文档明确：主脚本与 IFrame 之间用 sys_Storage 作为数据桥，
+  IFrame 内可直接访问全局 eda。
+
+  ## 通信协议（与 src/ui.ts 的 openConfigIframe 配对）
+  · 读 `delivery-ui-request`  ：主脚本写入的请求（设置快照 + 能力标记 + 窗口 ID）
+  · 写 `delivery-ui-alive`    ：本页加载完成后立即写（心跳，证明窗口活着）
+  · 写 `delivery-ui-result`   ：用户点「开始导出」后写入配置结果，然后自行 closeIFrame
+  · 用户点标题栏 ✕ 或「取消」：直接 closeIFrame（不写 result = 取消）
+
+  ## ⚠️ 历史事故：不要用 `=== true` 判定存储写入成功
+  `eda.sys_Storage.setExtensionUserConfig()` 的官方签名返回 **Promise<boolean>**。
+  v1.4.0 在本页写了 `... === true` —— Promise 永远不等于 `true`，
+  于是**每个客户端**都会显示「无法写入扩展存储」并禁用「浏览 / 开始导出」按钮。
+  正确做法：await 它，然后**写后读回校验**（唯一与返回值约定无关的判据）。
+
+  ## 降级
+  若本页无法访问 eda，或存储桥写入后读回不一致，显示明确的提示条，
+  主脚本据此改用官方弹窗链；同一 EDA 版本下不再重复弹本窗口。
+-->
+<head>
+<meta charset="UTF-8">
+<title>PCB Delivery Export — 导出设置</title>
+<style>
+	:root {
+		--line: #d0d3d8;
+		--bg: #ffffff;
+		--fg: #1c1f24;
+		--muted: #6b7280;
+		--accent: #1a73e8;
+		--accent-weak: #e8f0fe;
+	}
+	* { box-sizing: border-box; }
+	html, body { margin: 0; padding: 0; }
+	body {
+		font: 13px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+		color: var(--fg);
+		background: var(--bg);
+		padding: 14px 16px 12px;
+		user-select: none;
+	}
+	h1 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+	.mandatory {
+		color: var(--muted);
+		margin: 0 0 10px;
+		padding: 6px 8px;
+		background: #f6f7f9;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		user-select: text;
+	}
+	.opt {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 4px;
+		border-radius: 4px;
+		cursor: pointer;
+	}
+	.opt:hover { background: var(--accent-weak); }
+	.opt input { width: 15px; height: 15px; margin: 0; flex: none; }
+	.opt .sub { color: var(--muted); font-size: 12px; }
+	.section-title {
+		margin: 12px 0 4px;
+		font-weight: 600;
+	}
+	.dirrow { display: flex; gap: 8px; align-items: center; }
+	.dirrow input {
+		flex: 1;
+		font: 12px/1.4 Consolas, monospace;
+		padding: 5px 7px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		user-select: text;
+	}
+	button {
+		font: 13px/1.4 inherit;
+		padding: 5px 14px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		background: #fafbfc;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	button:hover { border-color: var(--accent); color: var(--accent); }
+	button.primary {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #fff;
+		font-weight: 600;
+	}
+	button.primary:hover { opacity: 0.92; color: #fff; }
+	button:disabled { opacity: 0.5; cursor: default; }
+	button:disabled:hover { border-color: var(--line); color: inherit; }
+	#browser {
+		display: none;
+		margin-top: 8px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+	#browser.open { display: block; }
+	#browser-bar {
+		display: flex;
+		gap: 6px;
+		padding: 6px 8px;
+		background: #f6f7f9;
+		border-bottom: 1px solid var(--line);
+		align-items: center;
+	}
+	#browser-path {
+		flex: 1;
+		font: 11px/1.4 Consolas, monospace;
+		color: var(--muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		user-select: text;
+	}
+	#browser-list {
+		max-height: 150px;
+		overflow-y: auto;
+	}
+	.dir-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		padding: 5px 10px;
+		font: 12px/1.5 inherit;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.dir-item:hover { background: var(--accent-weak); color: var(--fg); }
+	.dir-empty { padding: 8px 10px; color: var(--muted); font-size: 12px; }
+	#browser-msg { padding: 6px 10px; color: var(--muted); font-size: 12px; }
+	.error-bar {
+		display: none;
+		margin: 0 0 10px;
+		padding: 8px 10px;
+		border: 1px solid #f0b4b4;
+		background: #fdf0f0;
+		color: #a33;
+		border-radius: 4px;
+		user-select: text;
+		white-space: pre-wrap;
+		font: 12px/1.6 Consolas, "Microsoft YaHei", monospace;
+	}
+	.foot {
+		display: flex;
+		justify-content: flex-end;
+		gap: 10px;
+		margin-top: 16px;
+		padding-top: 10px;
+		border-top: 1px solid var(--line);
+	}
+	.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; user-select: text; }
+	#progress { display: none; margin-top: 24px; }
+	#progress-track { height: 16px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #f1f3f5; }
+	#progress-bar { width: 2%; height: 100%; background: var(--accent); transition: width .25s ease; }
+	#progress-percent { margin-top: 10px; font-size: 18px; font-weight: 600; text-align: center; }
+	#progress-message { margin-top: 6px; color: var(--muted); text-align: center; user-select: text; }
+</style>
+</head>
+<body>
+
+<div id="error-bar" class="error-bar"></div>
+
+<h1 id="title">导出设置 / Export Settings</h1>
+<p class="mandatory" id="mandatory"></p>
+
+<div id="options"></div>
+
+<p class="hint" id="language-hint">如需导出英文交互式 BOM，请先将 EasyEDA 的界面语言切换为 English。 / Switch EasyEDA to English before exporting an English interactive BOM.</p>
+
+<div class="section-title" id="dir-title">输出目录 / Output folder</div>
+<div class="dirrow" id="dir-row">
+	<input id="dir" type="text" spellcheck="false" placeholder="D:\PCB_Output">
+	<button id="browse" type="button">浏览… / Browse</button>
+</div>
+<p class="hint" id="dir-hint"></p>
+
+<div id="browser">
+	<div id="browser-bar">
+		<button id="up" type="button" title="上一级 / Up">⬆</button>
+		<button id="roots" type="button" title="换磁盘 / Change root">💾</button>
+		<span id="browser-path"></span>
+		<button id="use" type="button">✅ 用当前目录 / Use</button>
+	</div>
+	<div id="browser-list"></div>
+	<div id="browser-msg"></div>
+</div>
+
+<div id="progress">
+	<div id="progress-track"><div id="progress-bar"></div></div>
+	<div id="progress-percent">2%</div>
+	<div id="progress-message">正在启动导出… / Starting export…</div>
+</div>
+
+<div class="foot" id="actions">
+	<button id="cancel" type="button">取消 / Cancel</button>
+	<button id="start" type="button" class="primary">开始导出 / Export</button>
+</div>
+
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ * 与 src/settings.ts 对应的存储键（保持字面量一致，勿单方面修改）
+ * ------------------------------------------------------------------ */
+var KEYS = {
+	request: 'delivery-ui-request',
+	result: 'delivery-ui-result',
+	alive: 'delivery-ui-alive',
+	browseRequest: 'delivery-ui-browse-request',
+	browseResult: 'delivery-ui-browse-result',
+	progress: 'delivery-ui-progress',
+};
+var DEFAULT_IFRAME_ID = 'pcb-delivery-config';
+
+/* ------------------------------------------------------------------ *
+ * 环境探测
+ * ------------------------------------------------------------------ */
+var edaOk = false;
+try {
+	edaOk = typeof eda !== 'undefined' && !!eda
+		&& typeof eda.sys_Storage !== 'undefined'
+		&& typeof eda.sys_Storage.getExtensionUserConfig === 'function'
+		&& typeof eda.sys_Storage.setExtensionUserConfig === 'function';
+} catch (e) { edaOk = false; }
+
+function showError(message) {
+	var bar = document.getElementById('error-bar');
+	bar.textContent = message;
+	bar.style.display = 'block';
+}
+
+function esc(text) {
+	var div = document.createElement('div');
+	div.textContent = String(text == null ? '' : text);
+	return div.innerHTML;
+}
+
+/* ------------------------------------------------------------------ *
+ * 存储桥：只以「写后读回一致」为成功判据
+ *
+ * 官方签名返回 Promise<boolean>，但旧客户端也可能同步返回 boolean，
+ * 甚至返回 undefined。任何一种都可能出现，所以：
+ *   1. 调用后 await（若返回 thenable）；
+ *   2. 再 getExtensionUserConfig 读回，与写入值比对。
+ * 唯一可靠的判据是「读回来一样」。v1.4.0 用 `=== true` 判定，
+ * 被 Promise 坑到每个客户端都误报失败 —— 此处已锁定正确写法。
+ * ------------------------------------------------------------------ */
+function isThenable(v) {
+	return !!v && typeof v.then === 'function';
+}
+
+/** 写入并读回校验；返回 Promise<{ok:boolean, detail:string}>，永不 reject */
+function storeSet(key, text) {
+	return new Promise(function (resolve) {
+		if (!edaOk) {
+			resolve({ ok: false, detail: 'eda.sys_Storage 不可用' });
+			return;
+		}
+		var ret;
+		try {
+			ret = eda.sys_Storage.setExtensionUserConfig(key, text);
+		} catch (e) {
+			resolve({ ok: false, detail: 'setExtensionUserConfig 抛异常: ' + String(e && e.message ? e.message : e) });
+			return;
+		}
+		var after = function () {
+			var back;
+			try {
+				back = eda.sys_Storage.getExtensionUserConfig(key);
+			} catch (e) {
+				resolve({ ok: false, detail: '读回时抛异常: ' + String(e && e.message ? e.message : e) });
+				return;
+			}
+			if (String(back) === String(text))
+				resolve({ ok: true, detail: '读回一致' });
+			else
+				resolve({ ok: false, detail: '写入后读回不一致（写回=' + JSON.stringify(back) + '，期望=' + JSON.stringify(text) + '）；setExtensionUserConfig 返回类型=' + (isThenable(ret) ? 'Promise' : typeof ret) + '，返回值=' + String(ret) });
+		};
+		if (isThenable(ret)) {
+			var settled = false;
+			var guard = setTimeout(function () { if (!settled) { settled = true; after(); } }, 3000);
+			ret.then(function () {
+				if (settled) return;
+				settled = true; clearTimeout(guard); after();
+			}).catch(function (e) {
+				if (settled) return;
+				settled = true; clearTimeout(guard);
+				resolve({ ok: false, detail: 'setExtensionUserConfig 的 Promise 被 reject: ' + String(e && e.message ? e.message : e) });
+			});
+		}
+		else {
+			after();
+		}
+	});
+}
+
+function storeGet(key) {
+	try {
+		var raw = eda.sys_Storage.getExtensionUserConfig(key);
+		if (raw === undefined || raw === null || raw === '')
+			return null;
+		return (typeof raw === 'string') ? JSON.parse(raw) : raw;
+	} catch (e) { return null; }
+}
+
+function storeClear(key) {
+	try { eda.sys_Storage.setExtensionUserConfig(key, ''); } catch (e) { /* ignore */ }
+}
+
+/* ------------------------------------------------------------------ *
+ * 心跳：告诉主脚本「窗口活着且能回传数据」
+ * ------------------------------------------------------------------ */
+if (!edaOk) {
+	showError('本窗口无法访问插件接口（当前客户端版本可能未在 IFrame 中注入 eda）。'
+		+ ' / This window cannot access the extension API.\n'
+		+ '请直接关闭本窗口，插件会自动改用传统弹窗。 / Close this window and the plugin will fall back to dialogs.');
+	document.getElementById('start').disabled = true;
+}
+else {
+	var aliveText = JSON.stringify(Date.now());
+	storeSet(KEYS.alive, aliveText).then(function (r) {
+		if (r.ok) return;
+		showError('存储桥不可用：主脚本收不到本窗口的结果。\n'
+			+ '原因：' + r.detail + '\n'
+			+ '请关闭本窗口，插件会自动改用传统弹窗（同一客户端版本下不会再弹本窗口）。');
+		document.getElementById('start').disabled = true;
+	});
+}
+
+/* ------------------------------------------------------------------ *
+ * 读请求 → 渲染
+ * ------------------------------------------------------------------ */
+var request = null;
+var iframeId = DEFAULT_IFRAME_ID;
+
+var OPTIONS = [
+	{ key: 'cplFilter', label: 'CPL 按 BOM 过滤', sub: '坐标文件中剔除 BOM 未贴装器件 / filter CPL by BOM' },
+	{ key: 'schematicPdf', label: '原理图 PDF', sub: 'Schematic PDF' },
+	{ key: 'step', label: 'STEP 3D 模型', sub: 'STEP 3D model' },
+	{ key: 'interactiveBom', label: '交互式 BOM', sub: 'Interactive BOM (HTML)', needFlag: 'interactiveBomSupported' },
+	{ key: 'projectV3', label: '工程文件 V3 (.epro2)', sub: 'Project source V3' },
+	{ key: 'projectV2', label: '工程文件 V2 (.epro)', sub: 'Project source V2' },
+	{ key: 'runDrc', label: '导出前运行 DRC', sub: 'Run DRC before export' },
+];
+
+function render() {
+	request = storeGet(KEYS.request);
+	var settings = (request && request.settings) || {};
+	// 勾选状态以「选项键数组」为准（主脚本用 currentSelection() 生成）。
+	// 早期版本直接读 settings['interactiveBom']，而 DeliverySettings 的键名是
+	// exportInteractiveBom —— 键名对不上，窗口永远显示默认值，保存的勾选看起来「没生效」。
+	var selectedFromHost = (request && Array.isArray(request.selected)) ? request.selected : null;
+	if (request && request.iframeId)
+		iframeId = String(request.iframeId);
+
+	document.getElementById('mandatory').innerHTML =
+		'必选（始终导出）/ Always exported: <b>Gerber · BOM · 坐标文件 CPL</b>';
+
+	var box = document.getElementById('options');
+	var html = '';
+	for (var i = 0; i < OPTIONS.length; i++) {
+		var opt = OPTIONS[i];
+		if (opt.needFlag && !(request && request[opt.needFlag]))
+			continue;
+		var checked;
+		if (selectedFromHost)
+			checked = selectedFromHost.indexOf(opt.key) >= 0;
+		else {
+			// 兜底：老主脚本没给 selected 时，按「默认勾选、V2 默认不勾」处理
+			checked = opt.key !== 'projectV2' && settings[opt.key] !== false;
+		}
+		html += '<label class="opt"><input type="checkbox" id="opt-' + opt.key + '"'
+			+ (checked ? ' checked' : '') + '>'
+			+ '<span>' + esc(opt.label)
+			+ ' <span class="sub">— ' + esc(opt.sub) + '</span></span></label>';
+	}
+	box.innerHTML = html;
+
+	var dirInput = document.getElementById('dir');
+	dirInput.value = String((request && request.outputDir) || settings.outputDir || '');
+	var browse = document.getElementById('browse');
+	if (!(request && request.folderPathPickerSupported)) {
+		browse.style.display = 'none';
+		document.getElementById('dir-hint').textContent =
+			'当前 EasyEDA 版本没有可用的文件夹路径选择接口，请直接填写或粘贴完整路径。 / Enter the full path manually.';
+	}
+	else {
+		document.getElementById('dir-hint').textContent =
+			'点「浏览」选择目录，或直接粘贴完整路径。 / Browse or paste a full path.';
+	}
+}
+
+/* ------------------------------------------------------------------ *
+ * 浏览输出目录
+ *
+ * 本机（EasyEDA 3.2.149）实测：openReadFolderPathDialog / openReadFilePathDialog 缺失，
+ * listFilesOfFileSystem 超时。因此按下列顺序逐级尝试，全部带硬超时：
+ *   1. openReadFolderPathDialog()          原生目录框（新客户端）
+ *   2. openReadFolderDialog()              原生目录框（老客户端）：由 File.path 反推文件夹
+ *   3. 内置逐级浏览面板（listFilesOfFileSystem）
+ *   4. 手填路径（始终可用）
+ *
+ * 不使用 openReadFileDialog 降级，因为那会强迫用户选择一个无关文件。
+ * ------------------------------------------------------------------ */
+var FS_TIMEOUT_MS = 6000;
+
+function withTimeout(promise, ms) {
+	return Promise.race([
+		Promise.resolve(promise),
+		new Promise(function (_, reject) {
+			setTimeout(function () { reject(new Error('timeout ' + ms + 'ms')); }, ms);
+		}),
+	]);
+}
+
+function hasFs(name) {
+	return !!eda.sys_FileSystem && typeof eda.sys_FileSystem[name] === 'function';
+}
+
+function callFs(name, args) {
+	if (!hasFs(name))
+		return Promise.reject(new Error('API missing: ' + name));
+	return withTimeout(Promise.resolve(eda.sys_FileSystem[name].apply(eda.sys_FileSystem, args || [])), FS_TIMEOUT_MS);
+}
+
+function dirnameOf(p) {
+	var trimmed = String(p || '').replace(/[\\/]+$/, '');
+	var idx = Math.max(trimmed.lastIndexOf('\\'), trimmed.lastIndexOf('/'));
+	if (idx <= 0)
+		return '';
+	var parent = trimmed.slice(0, idx);
+	return /^[a-z]:$/i.test(parent) ? parent + '\\' : parent;
+}
+
+/** 从 openReadFolderDialog 的结果反推文件夹绝对路径 */
+function folderFromFolderPick(entries) {
+	if (!Array.isArray(entries) || entries.length === 0)
+		return '';
+	var first = entries[0] || {};
+	// 类型声明为 {relativePath,file}[]，部分真机却直接返回 File[]。
+	var file = first.file || first;
+	if (!file)
+		return '';
+	var abs = String(file.path || file.fullPath || first.path || first.fullPath || '');
+	if (!abs)
+		return '';
+	var normAbs = abs.replace(/\//g, '\\');
+	var rel = String(first.relativePath || file.webkitRelativePath || '').replace(/\//g, '\\');
+	if (rel) {
+		var tail = '\\' + rel;
+		if (normAbs.length > tail.length
+			&& normAbs.slice(-tail.length).toLowerCase() === tail.toLowerCase())
+			return normAbs.slice(0, normAbs.length - tail.length);
+	}
+	return dirnameOf(normAbs);
+}
+
+function setDir(dir, how) {
+	if (!dir)
+		return false;
+	document.getElementById('dir').value = String(dir);
+	document.getElementById('dir-hint').innerHTML =
+		'<span style="color:#1a7f37">已选择 / Selected (' + esc(how) + ')：' + esc(dir) + '</span>';
+	return true;
+}
+
+function browseStatus(text) {
+	document.getElementById('dir-hint').innerHTML = esc(text);
+}
+
+/** 逐级尝试各种「浏览」通道 */
+function runBrowseChain() {
+	var btn = document.getElementById('browse');
+	btn.disabled = true;
+	browseStatus('正在请求主插件打开目录选择器… / Opening folder picker…');
+	var id = Date.now();
+	storeClear(KEYS.browseResult);
+	storeSet(KEYS.browseRequest, JSON.stringify({
+		id: id,
+		currentDir: document.getElementById('dir').value.trim()
+	})).then(function (written) {
+		if (!written.ok) {
+			btn.disabled = false;
+			browseStatus('无法发送浏览请求，请直接填写完整路径。/ Browse bridge unavailable.');
+			return;
+		}
+		var tries = 0;
+		var poll = setInterval(function () {
+			tries++;
+			var result = storeGet(KEYS.browseResult);
+			if (result && result.id === id) {
+				clearInterval(poll);
+				storeClear(KEYS.browseResult);
+				btn.disabled = false;
+				if (result.dir) setDir(String(result.dir), String(result.how || '目录选择'));
+				else browseStatus('未选择目录；可重试或直接填写路径。/ No folder selected.');
+			}
+			else if (tries > 1200) {
+				clearInterval(poll);
+				btn.disabled = false;
+				browseStatus('目录选择超时，请直接填写路径。/ Folder picker timed out.');
+			}
+		}, 250);
+	});
+}
+
+/* ------------------------------------------------------------------ *
+ * 内置逐级浏览面板（listFilesOfFileSystem）
+ * ------------------------------------------------------------------ */
+var currentDir = '';
+var knownRoots = [];
+
+function discoverRoots() {
+	var roots = [];
+	function push(v) {
+		if (typeof v !== 'string') return;
+		var dir = dirnameOf(v) || v;
+		if (dir && roots.indexOf(dir) < 0) roots.push(dir);
+	}
+	return Promise.all([
+		callFs('getProjectsPaths', []).then(function (r) { if (Array.isArray(r)) r.forEach(push); }).catch(function () {}),
+		callFs('getEdaPath', []).then(push).catch(function () {}),
+		callFs('getDocumentsPath', []).then(push).catch(function () {}),
+	]).then(function () {
+		['C:\\', 'D:\\', 'E:\\', 'F:\\'].forEach(function (d) {
+			if (roots.indexOf(d) < 0) roots.push(d);
+		});
+		return roots;
+	});
+}
+
+function renderList(entries) {
+	var list = document.getElementById('browser-list');
+	if (!entries) {
+		list.innerHTML = '<div class="dir-empty">无法列出该目录（接口超时或无权限）。/ Cannot list this directory.</div>';
+		return;
+	}
+	var dirs = entries.filter(function (it) { return it && it.isDirectory === true; });
+	dirs.sort(function (a, b) { return String(a.fileName).localeCompare(String(b.fileName)); });
+	if (dirs.length === 0) {
+		list.innerHTML = '<div class="dir-empty">（此目录下没有子文件夹）/ No subfolders.</div>';
+		return;
+	}
+	var html = '';
+	for (var i = 0; i < Math.min(dirs.length, 60); i++) {
+		var full = dirs[i].fullPath || (currentDir.replace(/[\\/]+$/, '') + '\\' + dirs[i].fileName);
+		html += '<button type="button" class="dir-item" data-full="' + esc(full) + '">'
+			+ '📁 ' + esc(dirs[i].fileName) + '</button>';
+	}
+	list.innerHTML = html;
+	var items = list.querySelectorAll('.dir-item');
+	for (var j = 0; j < items.length; j++) {
+		items[j].addEventListener('click', function () {
+			enter(this.getAttribute('data-full'));
+		});
+	}
+}
+
+function enter(dir) {
+	currentDir = String(dir || '').trim() || 'C:\\';
+	document.getElementById('browser-path').textContent = currentDir;
+	document.getElementById('browser-msg').textContent = '加载中… / Loading…';
+	document.getElementById('browser-list').innerHTML = '';
+	callFs('listFilesOfFileSystem', [currentDir, false])
+		.then(renderList)
+		.catch(function () { renderList(null); })
+		.then(function () {
+			document.getElementById('browser-msg').textContent = '';
+		});
+}
+
+function openPanel() {
+	var panel = document.getElementById('browser');
+	panel.classList.add('open');
+	if (!knownRoots.length) {
+		discoverRoots().then(function (roots) {
+			knownRoots = roots;
+			var seed = document.getElementById('dir').value.trim() || roots[0] || 'C:\\';
+			enter(seed);
+		});
+	}
+	else {
+		enter(currentDir || document.getElementById('dir').value.trim() || knownRoots[0]);
+	}
+}
+
+document.getElementById('browse').addEventListener('click', function () {
+	// 面板已打开时再点 = 收起
+	var panel = document.getElementById('browser');
+	if (panel.classList.contains('open')) {
+		panel.classList.remove('open');
+		return;
+	}
+	runBrowseChain();
+});
+
+document.getElementById('up').addEventListener('click', function () {
+	var parent = dirnameOf(currentDir);
+	if (parent)
+		enter(parent);
+});
+
+document.getElementById('roots').addEventListener('click', function () {
+	if (!knownRoots.length)
+		return;
+	var pick = window.prompt('选择起始磁盘 / Choose root disk:\n' + knownRoots.join('\n'), knownRoots[0]);
+	if (pick && knownRoots.indexOf(pick) >= 0)
+		enter(pick);
+});
+
+document.getElementById('use').addEventListener('click', function () {
+	setDir(currentDir, '逐级浏览');
+	document.getElementById('browser').classList.remove('open');
+});
+
+/* ------------------------------------------------------------------ *
+ * 开始导出 / 取消
+ * ------------------------------------------------------------------ */
+function isValidDir(dir) {
+	return /^[a-z]:[\\/]/i.test(dir) || /^\\\\/.test(dir) || dir.indexOf('/') === 0;
+}
+
+document.getElementById('start').addEventListener('click', function () {
+	var dirInput = document.getElementById('dir');
+	var dir = dirInput.value.trim().replace(/[\\/]+$/, '');
+	if (!dir || !isValidDir(dir)) {
+		dirInput.focus();
+		document.getElementById('dir-hint').innerHTML =
+			'<span style="color:#a33">请填写有效的绝对路径（例如 D:\\PCB_Output），或点「浏览」选择。/ Invalid absolute path.</span>';
+		return;
+	}
+	if (/^[a-z]:$/i.test(dir))
+		dir = dir + '\\';
+
+	var selected = [];
+	for (var i = 0; i < OPTIONS.length; i++) {
+		var el = document.getElementById('opt-' + OPTIONS[i].key);
+		if (el && el.checked)
+			selected.push(OPTIONS[i].key);
+	}
+
+	var btn = document.getElementById('start');
+	btn.disabled = true;
+	btn.textContent = '正在提交… / Submitting…';
+
+	var payload = JSON.stringify({
+		selected: selected,
+		outputDir: dir,
+		finishedAt: Date.now(),
+	});
+
+	storeSet(KEYS.result, payload).then(function (r) {
+		if (!r.ok) {
+			// 提交失败必须让用户看见，绝不能静默
+			btn.disabled = false;
+			btn.textContent = '开始导出 / Export';
+			showError('无法把设置传回插件：' + r.detail
+				+ '\n请关闭本窗口，插件会自动改用传统弹窗。');
+			return;
+		}
+		document.getElementById('mandatory').style.display = 'none';
+		document.getElementById('options').style.display = 'none';
+		document.getElementById('dir-title').style.display = 'none';
+		document.getElementById('dir-row').style.display = 'none';
+		document.getElementById('dir-hint').style.display = 'none';
+		document.getElementById('browser').style.display = 'none';
+		document.getElementById('actions').style.display = 'none';
+		document.getElementById('title').textContent = '正在导出 / Exporting';
+		document.getElementById('progress').style.display = 'block';
+		var progressPoll = setInterval(function () {
+			var progress = storeGet(KEYS.progress);
+			if (!progress) return;
+			var percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
+			document.getElementById('progress-bar').style.width = percent + '%';
+			document.getElementById('progress-percent').textContent = percent + '%';
+			document.getElementById('progress-message').textContent = String(progress.message || '正在处理…');
+			if (progress.done) clearInterval(progressPoll);
+		}, 250);
+	});
+});
+
+document.getElementById('cancel').addEventListener('click', function () {
+	try {
+		eda.sys_IFrame.closeIFrame(iframeId);
+	} catch (e) { /* ignore */ }
+});
+
+/* 启动：请求可能还在写入（主脚本是异步写），轮询等待最多 8 秒 */
+if (edaOk) {
+	var renderOnce = function () {
+		try {
+			render();
+		} catch (e) {
+			showError('初始化失败 / Init failed: ' + String(e && e.message ? e.message : e));
+			document.getElementById('start').disabled = true;
+			return true;
+		}
+		return request !== null;
+	};
+	if (!renderOnce()) {
+		var tries = 0;
+		var timer = setInterval(function () {
+			tries++;
+			if (renderOnce() || tries > 32)
+				clearInterval(timer);
+		}, 250);
+	}
+}
+</script>
+</body>
+</html>
