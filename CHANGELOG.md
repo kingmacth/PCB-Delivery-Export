@@ -1,3 +1,10 @@
+# PCB Delivery Export 1.7.2
+
+## 发布修正
+
+1. 使用原创的 PCB 与导出箭头图标替换 EasyEDA SDK 默认 Logo，满足插件仓库的品牌素材要求。
+2. 新 Logo 使用透明背景和适合小尺寸显示的高对比度构图，不包含 EasyEDA、嘉立创或其他第三方商标。
+
 # PCB Delivery Export 1.7.1
 
 ## 发布修正
