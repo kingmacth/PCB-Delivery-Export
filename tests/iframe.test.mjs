@@ -396,6 +396,9 @@ console.log('='.repeat(64));
 	ok('界面提示英文 iBOM 跟随 EasyEDA 语言',
 		html.includes('Switch EasyEDA to English before exporting an English interactive BOM.'),
 		'应包含英文导出提示');
+	ok('主界面底部显示作者和联系邮箱',
+		html.includes('Author: kingmacth') && html.includes('kingmacth@gmail.com'),
+		'应包含作者名与邮箱');
 }
 
 console.log(`\n${'='.repeat(64)}`);
