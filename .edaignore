@@ -21,6 +21,5 @@
 debug.log
 /*.eext
 
-# 开发日志不进入发布包；中英文 README 均保留。
-/CHANGELOG.md
+# 中英文 README、CHANGELOG、LICENSE 与 NOTICE 均保留在发布包中。
 

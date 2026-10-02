@@ -1,3 +1,10 @@
+# PCB Delivery Export 1.7.1
+
+## 发布修正
+
+1. 将 `CHANGELOG.md` 纳入 `.eext` 发布包，满足嘉立创 EDA 插件仓库的上传要求。
+2. 在导出设置主界面底部显示作者 `kingmacth` 和联系邮箱 `kingmacth@gmail.com`。
+
 # PCB Delivery Export 1.7.0
 
 ## 新功能与发布整理

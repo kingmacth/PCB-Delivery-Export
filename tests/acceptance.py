@@ -51,12 +51,14 @@ with zipfile.ZipFile(EEXT) as z:
     locales_ext_zh = json.loads(z.read('locales/extensionJson/zh-Hans.json').decode('utf-8'))
     locales_ext_en = json.loads(z.read('locales/extensionJson/en.json').decode('utf-8'))
     has_logo = bool(z.read('images/logo.png'))
+    changelog = z.read('CHANGELOG.md').decode('utf-8') if 'CHANGELOG.md' in names else ''
 
 # v1.4.0 起配置窗口为 /iframe/config.html（平铺复选框 + 浏览按钮），
 # SDK 模板自带的示例页 iframe/index.html 已移除。
 required = ['extension.json', 'dist/index.js', 'images/logo.png', 'iframe/config.html',
             'locales/zh-Hans.json', 'locales/en.json',
-            'locales/extensionJson/zh-Hans.json', 'locales/extensionJson/en.json']
+            'locales/extensionJson/zh-Hans.json', 'locales/extensionJson/en.json',
+            'README.md', 'README.en.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE']
 for r in required:
     check(f'包含 {r}', r in names)
 
@@ -64,6 +66,7 @@ check('不含 src/ 源码', not any(n.startswith('src/') for n in names))
 check('不含 tests/ 测试', not any(n.startswith('tests/') for n in names))
 check('不含 node_modules/', not any('node_modules' in n for n in names))
 check('logo.png 非空', has_logo)
+check('CHANGELOG.md 包含当前版本更新说明', f'# PCB Delivery Export {ext_json.get("version")}' in changelog)
 print(f'        包内文件 {len(names)} 个；总大小 {EEXT.stat().st_size} 字节')
 
 # ---------- 2. extension.json ----------
