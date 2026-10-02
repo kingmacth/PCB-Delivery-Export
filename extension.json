@@ -3,7 +3,7 @@
 	"uuid": "b6009d46b28448bd970612c73b90ee04",
 	"displayName": "PCB Delivery Export",
 	"description": "一键导出 Gerber、BOM 和坐标文件，可选原理图 PDF、STEP、交互式 BOM 与工程源文件；支持按 BOM 过滤坐标文件中不贴装的元件。",
-	"version": "1.7.1",
+	"version": "1.7.2",
 	"publisher": "kingmacth",
 	"engines": {
 		"eda": ">=3.0.0"

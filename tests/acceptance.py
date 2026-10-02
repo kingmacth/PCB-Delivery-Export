@@ -50,7 +50,9 @@ with zipfile.ZipFile(EEXT) as z:
     locales_en = json.loads(z.read('locales/en.json').decode('utf-8'))
     locales_ext_zh = json.loads(z.read('locales/extensionJson/zh-Hans.json').decode('utf-8'))
     locales_ext_en = json.loads(z.read('locales/extensionJson/en.json').decode('utf-8'))
-    has_logo = bool(z.read('images/logo.png'))
+    logo_bytes = z.read('images/logo.png')
+    has_logo = bool(logo_bytes)
+    logo_sha256 = hashlib.sha256(logo_bytes).hexdigest()
     changelog = z.read('CHANGELOG.md').decode('utf-8') if 'CHANGELOG.md' in names else ''
 
 # v1.4.0 起配置窗口为 /iframe/config.html（平铺复选框 + 浏览按钮），
@@ -66,6 +68,9 @@ check('不含 src/ 源码', not any(n.startswith('src/') for n in names))
 check('不含 tests/ 测试', not any(n.startswith('tests/') for n in names))
 check('不含 node_modules/', not any('node_modules' in n for n in names))
 check('logo.png 非空', has_logo)
+check('logo.png 不是 SDK 默认 Logo',
+      logo_sha256 != 'ef1a173637a9260d5e2171bc3cf98ea0a3a6649022e3111b063e54a418c9ce22',
+      logo_sha256)
 check('CHANGELOG.md 包含当前版本更新说明', f'# PCB Delivery Export {ext_json.get("version")}' in changelog)
 print(f'        包内文件 {len(names)} 个；总大小 {EEXT.stat().st_size} 字节')
 
