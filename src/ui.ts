@@ -51,6 +51,7 @@ import { notify, notifyError, notifyWarn } from './notify';
 import { dirnameOf, joinPath } from './paths';
 import {
 	clearJsonConfig,
+	normalizeSettings,
 	readJsonConfig,
 	UI_ALIVE_KEY,
 	UI_BROKEN_KEY,
@@ -804,8 +805,8 @@ const CONFIG_IFRAME_PATH = '/iframe/config.html';
 const CONFIG_IFRAME_ID = 'pcb-delivery-config';
 
 /** 配置窗口尺寸（正文内联框架的宽高） */
-const CONFIG_IFRAME_WIDTH = 480;
-const CONFIG_IFRAME_HEIGHT = 640;
+const CONFIG_IFRAME_WIDTH = 620;
+const CONFIG_IFRAME_HEIGHT = 760;
 
 /** 等待窗口心跳的上限：超时说明 IFrame 没活起来（如旧客户端未注入 eda） */
 const HEARTBEAT_TIMEOUT_MS = 10_000;
@@ -864,6 +865,7 @@ type IframeOutcome
 interface IframeResultPayload {
 	selected?: unknown;
 	outputDir?: unknown;
+	manufacturing?: unknown;
 }
 
 interface IframeBrowseRequest {
@@ -1000,7 +1002,9 @@ async function openConfigIframe(settings: DeliverySettings): Promise<IframeOutco
 			const selected = Array.isArray(raw.selected)
 				? raw.selected.filter((v): v is string => typeof v === 'string')
 				: [];
-			const next = applySelection(settings, selected);
+			let next = applySelection(settings, selected);
+			if (raw.manufacturing && typeof raw.manufacturing === 'object')
+				next = normalizeSettings({ ...next, ...(raw.manufacturing as Record<string, unknown>) });
 
 			const typed = typeof raw.outputDir === 'string' ? raw.outputDir.trim() : '';
 			const previous = (settings.outputDir ?? '').trim();

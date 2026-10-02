@@ -17,6 +17,7 @@ import { analyzeTable, crossCheckBomToCpl, filterCpl } from '../src/bomCpl';
 import { CAPABILITY_KEYS, getCapabilities, invalidateCapabilities, isVersionAtLeast, missingCapabilities, parseEdaVersion } from '../src/capabilities';
 import { difference, mergeDesignators, parseDesignators } from '../src/designators';
 import { ApiTimeoutError, attempt, softCall, withTimeout } from '../src/edaCompat';
+import { buildManufacturingRequirements, embedRequirementsInGerber, REQUIREMENTS_FILE_EN, REQUIREMENTS_FILE_ZH } from '../src/manufacturing';
 import { dirnameOf, formatLocalDateYmd, joinPath, sanitizeName, validateBaseDir } from '../src/paths';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../src/settings';
 import { loadXlsx, locateHeader, readDesignatorColumn } from '../src/xlsx';
@@ -361,6 +362,11 @@ async function main(): Promise<void> {
 	eq('BOM 必选恒为 true', forced.exportBom, true);
 	eq('CPL 必选恒为 true', forced.exportCpl, true);
 	eq('3D HTML 恒为 false', forced.export3DHtml, false);
+	eq('默认板厚 1.6mm', forced.boardThicknessMm, '1.6');
+	eq('默认阻焊绿色', forced.solderMaskColor, 'Green');
+	eq('默认字符白色', forced.silkscreenColor, 'White');
+	eq('默认表面处理无铅喷锡', forced.surfaceFinish, 'Lead-Free HASL');
+	eq('默认不启用阻抗控制', forced.impedanceControl, false);
 
 	// 6.2 可选项正常保留
 	const custom = normalizeSettings({
@@ -379,6 +385,39 @@ async function main(): Promise<void> {
 	eq('可选项 ProjectV2=true', custom.exportProjectV2, true);
 	eq('可选项 runDrc=false', custom.runDrc, false);
 	eq('outputDir 去首尾空格', custom.outputDir, 'D:/PCB_Out');
+
+	const fabrication = normalizeSettings({
+		boardThicknessMm: '0.8',
+		solderMaskColor: 'Purple',
+		silkscreenColor: 'Black',
+		surfaceFinish: 'ENIG',
+		impedanceControl: true,
+		manufacturingNotes: '  50 ohm ±10%  ',
+	});
+	eq('制造要求板厚可保存', fabrication.boardThicknessMm, '0.8');
+	eq('制造要求阻焊可保存', fabrication.solderMaskColor, 'Purple');
+	eq('制造要求字符可保存', fabrication.silkscreenColor, 'Black');
+	eq('制造要求表面处理可保存', fabrication.surfaceFinish, 'ENIG');
+	eq('制造要求阻抗控制可保存', fabrication.impedanceControl, true);
+	eq('制造要求备注去首尾空格', fabrication.manufacturingNotes, '50 ohm ±10%');
+	eq('非法板厚回退默认值', normalizeSettings({ boardThicknessMm: '9.9' }).boardThicknessMm, '1.6');
+
+	const requirementText = buildManufacturingRequirements({
+		boardThicknessMm: '1.6',
+		solderMaskColor: 'Green',
+		silkscreenColor: 'White',
+		surfaceFinish: 'Lead-Free HASL',
+		impedanceControl: true,
+		customNotes: 'USB 90 ohm',
+	}, 'Demo Board', '2026-10-02 12:00:00');
+	check('制造要求为中英双语', requirementText.includes('板厚 / Board thickness: 1.6 mm'));
+	check('制造要求含下单页复核警告', requirementText.includes('manufacturer order page'));
+	const gerberSource = new JSZip();
+	gerberSource.file('demo.gbr', 'G04 demo*');
+	const gerberBlob = new Blob([await gerberSource.generateAsync({ type: 'uint8array' })]);
+	const embedded = await JSZip.loadAsync(await (await embedRequirementsInGerber(gerberBlob, requirementText)).arrayBuffer());
+	check('Gerber ZIP 含中文名制造要求', embedded.file(REQUIREMENTS_FILE_ZH) !== null);
+	check('Gerber ZIP 含英文名制造要求', embedded.file(REQUIREMENTS_FILE_EN) !== null);
 
 	// 6.3 v1.0.0 旧设置迁移：projectFormat='V2' + exportProject=true
 	const migratedV2 = normalizeSettings({ exportProject: true, projectFormat: 'V2' });

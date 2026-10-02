@@ -2,8 +2,8 @@
 	"name": "pcb-delivery-export",
 	"uuid": "b6009d46b28448bd970612c73b90ee04",
 	"displayName": "PCB Delivery Export",
-	"description": "一键导出 Gerber、BOM 和坐标文件，可选原理图 PDF、STEP、交互式 BOM 与工程源文件；支持按 BOM 过滤坐标文件中不贴装的元件。",
-	"version": "1.7.2",
+	"description": "一键导出 Gerber、BOM 和坐标文件，支持 CPL 过滤及板厚、阻焊、字符、表面处理、阻抗和备注的双语制造要求。",
+	"version": "1.8.0",
 	"publisher": "kingmacth",
 	"engines": {
 		"eda": ">=3.0.0"

@@ -50,6 +50,24 @@ export function buildReport(run: ExportRunResult): string {
 	lines.push('');
 	lines.push(SEPARATOR);
 
+	// ---------- FABRICATION REQUIREMENTS ----------
+	const req = run.manufacturingRequirements;
+	lines.push('');
+	lines.push('制造要求 / FABRICATION REQUIREMENTS');
+	lines.push('');
+	lines.push(`板厚 / Board thickness: ${req.boardThicknessMm === 'Custom' ? '自定义 / Custom' : `${req.boardThicknessMm} mm`}`);
+	lines.push(`阻焊颜色 / Solder mask: ${req.solderMaskColor}`);
+	lines.push(`字符颜色 / Silkscreen: ${req.silkscreenColor}`);
+	lines.push(`表面处理 / Surface finish: ${req.surfaceFinish}`);
+	lines.push(`阻抗控制 / Impedance control: ${req.impedanceControl ? '需要 / REQUIRED' : '不需要 / NOT REQUIRED'}`);
+	lines.push('自定义备注 / Custom notes:');
+	lines.push(req.customNotes || '无 / None');
+	lines.push('');
+	lines.push('IMPORTANT: Verify every option on the manufacturer order page before production.');
+	lines.push('重要：提交生产前，必须在制造商下单页面逐项确认。');
+	lines.push('');
+	lines.push(SEPARATOR);
+
 	// ---------- ENVIRONMENT ----------
 	// 记录「当时跑在什么环境下、缺了哪些接口、走了哪条降级路径」。
 	// 同一个插件在 EDA 3.2.149 与 4.x 上行为不同，留痕才能事后解释差异。

@@ -72,6 +72,7 @@
 	.opt:hover { background: var(--accent-weak); }
 	.opt input { width: 15px; height: 15px; margin: 0; flex: none; }
 	.opt .sub { color: var(--muted); font-size: 12px; }
+	#options { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
 	.section-title {
 		margin: 12px 0 4px;
 		font-weight: 600;
@@ -170,6 +171,12 @@
 		border-top: 1px solid var(--line);
 	}
 	.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; user-select: text; }
+	.mfg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px; }
+	.mfg-field { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; }
+	.mfg-field select, #manufacturing-notes { width: 100%; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; background: #fff; color: var(--fg); font: 12px/1.4 inherit; user-select: text; }
+	#mfg-impedance-row { margin-top: 7px; }
+	#manufacturing-notes { min-height: 48px; resize: vertical; }
+	.mfg-warning { padding: 5px 7px; border-left: 3px solid #d97706; background: #fff8e7; }
 	#progress { display: none; margin-top: 24px; }
 	#progress-track { height: 16px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #f1f3f5; }
 	#progress-bar { width: 2%; height: 100%; background: var(--accent); transition: width .25s ease; }
@@ -187,6 +194,19 @@
 <div id="options"></div>
 
 <p class="hint" id="language-hint">如需导出英文交互式 BOM，请先将 EasyEDA 的界面语言切换为 English。 / Switch EasyEDA to English before exporting an English interactive BOM.</p>
+
+<div id="manufacturing-section">
+	<div class="section-title">制造要求 / Fabrication requirements</div>
+	<div class="mfg-grid">
+		<label class="mfg-field">板厚 / Thickness<select id="board-thickness"></select></label>
+		<label class="mfg-field">阻焊 / Solder mask<select id="solder-mask"></select></label>
+		<label class="mfg-field">字符 / Silkscreen<select id="silkscreen"></select></label>
+		<label class="mfg-field">表面处理 / Surface finish<select id="surface-finish"></select></label>
+	</div>
+	<label class="opt" id="mfg-impedance-row"><input type="checkbox" id="impedance-control"><span>阻抗控制 / Impedance control required</span></label>
+	<label class="mfg-field">自定义备注 / Custom notes<textarea id="manufacturing-notes" maxlength="2000" placeholder="特殊叠层、铜厚、金手指、阻抗值等 / Stackup, copper weight, edge plating, impedance targets, etc."></textarea></label>
+	<p class="hint mfg-warning">这些参数会写入交付文件，但不会自动填写嘉立创订单；投产前请在下单页面再次确认。 / These reminders do not fill the JLCPCB order automatically. Verify them before fabrication.</p>
+</div>
 
 <div class="section-title" id="dir-title">输出目录 / Output folder</div>
 <div class="dirrow" id="dir-row">
@@ -364,6 +384,22 @@ var OPTIONS = [
 	{ key: 'runDrc', label: '导出前运行 DRC', sub: 'Run DRC before export' },
 ];
 
+var MFG_OPTIONS = {
+	'board-thickness': [['0.4','0.4 mm'],['0.6','0.6 mm'],['0.8','0.8 mm'],['1.0','1.0 mm'],['1.2','1.2 mm'],['1.6','1.6 mm'],['2.0','2.0 mm'],['Custom','自定义 / Custom']],
+	'solder-mask': [['Green','绿色 / Green'],['Red','红色 / Red'],['Yellow','黄色 / Yellow'],['Blue','蓝色 / Blue'],['White','白色 / White'],['Black','黑色 / Black'],['Purple','紫色 / Purple']],
+	'silkscreen': [['White','白色 / White'],['Black','黑色 / Black']],
+	'surface-finish': [['Lead-Free HASL','无铅喷锡 / Lead-Free HASL'],['HASL (Leaded)','有铅喷锡 / HASL (Leaded)'],['ENIG','沉金 / ENIG'],['OSP','OSP 抗氧化'],['Custom / See notes','自定义（见备注） / Custom']],
+};
+
+function fillSelect(id, options, value) {
+	var el = document.getElementById(id);
+	var html = '';
+	for (var i = 0; i < options.length; i++)
+		html += '<option value="' + esc(options[i][0]) + '"' + (options[i][0] === value ? ' selected' : '') + '>' + esc(options[i][1]) + '</option>';
+	el.innerHTML = html;
+	el.value = value;
+}
+
 function render() {
 	request = storeGet(KEYS.request);
 	var settings = (request && request.settings) || {};
@@ -409,6 +445,13 @@ function render() {
 		document.getElementById('dir-hint').textContent =
 			'点「浏览」选择目录，或直接粘贴完整路径。 / Browse or paste a full path.';
 	}
+
+	fillSelect('board-thickness', MFG_OPTIONS['board-thickness'], settings.boardThicknessMm || '1.6');
+	fillSelect('solder-mask', MFG_OPTIONS['solder-mask'], settings.solderMaskColor || 'Green');
+	fillSelect('silkscreen', MFG_OPTIONS.silkscreen, settings.silkscreenColor || 'White');
+	fillSelect('surface-finish', MFG_OPTIONS['surface-finish'], settings.surfaceFinish || 'Lead-Free HASL');
+	document.getElementById('impedance-control').checked = settings.impedanceControl === true;
+	document.getElementById('manufacturing-notes').value = String(settings.manufacturingNotes || '');
 }
 
 /* ------------------------------------------------------------------ *
@@ -667,6 +710,14 @@ document.getElementById('start').addEventListener('click', function () {
 	var payload = JSON.stringify({
 		selected: selected,
 		outputDir: dir,
+		manufacturing: {
+			boardThicknessMm: document.getElementById('board-thickness').value,
+			solderMaskColor: document.getElementById('solder-mask').value,
+			silkscreenColor: document.getElementById('silkscreen').value,
+			surfaceFinish: document.getElementById('surface-finish').value,
+			impedanceControl: document.getElementById('impedance-control').checked,
+			manufacturingNotes: document.getElementById('manufacturing-notes').value.trim()
+		},
 		finishedAt: Date.now(),
 	});
 
@@ -681,6 +732,8 @@ document.getElementById('start').addEventListener('click', function () {
 		}
 		document.getElementById('mandatory').style.display = 'none';
 		document.getElementById('options').style.display = 'none';
+		document.getElementById('manufacturing-section').style.display = 'none';
+		document.getElementById('language-hint').style.display = 'none';
 		document.getElementById('dir-title').style.display = 'none';
 		document.getElementById('dir-row').style.display = 'none';
 		document.getElementById('dir-hint').style.display = 'none';

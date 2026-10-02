@@ -159,7 +159,18 @@ export const DEFAULT_SETTINGS: DeliverySettings = {
 	// 输出
 	outputDir: '',
 	rememberOutputDir: true,
+	boardThicknessMm: '1.6',
+	solderMaskColor: 'Green',
+	silkscreenColor: 'White',
+	surfaceFinish: 'Lead-Free HASL',
+	impedanceControl: false,
+	manufacturingNotes: '',
 };
+
+export const BOARD_THICKNESS_OPTIONS = ['0.4', '0.6', '0.8', '1.0', '1.2', '1.6', '2.0', 'Custom'] as const;
+export const SOLDER_MASK_OPTIONS = ['Green', 'Red', 'Yellow', 'Blue', 'White', 'Black', 'Purple'] as const;
+export const SILKSCREEN_OPTIONS = ['White', 'Black'] as const;
+export const SURFACE_FINISH_OPTIONS = ['Lead-Free HASL', 'HASL (Leaded)', 'ENIG', 'OSP', 'Custom / See notes'] as const;
 
 /** 布尔型设置项清单（用于 normalizeSettings 的类型守卫） */
 const BOOLEAN_KEYS = [
@@ -171,7 +182,15 @@ const BOOLEAN_KEYS = [
 	'exportProjectV2',
 	'runDrc',
 	'rememberOutputDir',
+	'impedanceControl',
 ] as const;
+
+const ENUM_SETTINGS = {
+	boardThicknessMm: BOARD_THICKNESS_OPTIONS,
+	solderMaskColor: SOLDER_MASK_OPTIONS,
+	silkscreenColor: SILKSCREEN_OPTIONS,
+	surfaceFinish: SURFACE_FINISH_OPTIONS,
+} as const;
 
 function isBoolean(v: unknown): v is boolean {
 	return typeof v === 'boolean';
@@ -199,6 +218,13 @@ export function normalizeSettings(raw: unknown): DeliverySettings {
 
 	if (isString(src.outputDir))
 		out.outputDir = src.outputDir.trim();
+	if (isString(src.manufacturingNotes))
+		out.manufacturingNotes = src.manufacturingNotes.trim().slice(0, 2000);
+	for (const key of Object.keys(ENUM_SETTINGS) as Array<keyof typeof ENUM_SETTINGS>) {
+		const value = src[key];
+		if (isString(value) && (ENUM_SETTINGS[key] as readonly string[]).includes(value))
+			out[key] = value;
+	}
 
 	// ---------- 旧版设置迁移 ----------
 	// v1.0.0 使用单个 `projectFormat: 'V3' | 'V2'` 描述工程文件格式，

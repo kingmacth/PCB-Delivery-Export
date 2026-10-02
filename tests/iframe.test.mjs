@@ -121,6 +121,8 @@ const REQUIRED_IDS = [
 	'dir-hint', 'browser', 'browser-bar', 'browser-path', 'browser-list',
 	'browser-msg', 'up', 'roots', 'use', 'cancel', 'start', 'dir-row', 'actions',
 	'progress', 'progress-track', 'progress-bar', 'progress-percent', 'progress-message',
+	'manufacturing-section', 'board-thickness', 'solder-mask', 'silkscreen',
+	'surface-finish', 'impedance-control', 'manufacturing-notes', 'language-hint',
 ];
 
 /** 从 options 的 innerHTML 里识别复选框，供 getElementById('opt-xxx') 使用 */
@@ -220,6 +222,12 @@ console.log('='.repeat(64));
 			exportProjectV3: true,
 			exportProjectV2: false,
 			outputDir: 'D:/PCB_Out',
+			boardThicknessMm: '0.8',
+			solderMaskColor: 'Purple',
+			silkscreenColor: 'Black',
+			surfaceFinish: 'ENIG',
+			impedanceControl: true,
+			manufacturingNotes: '50 ohm',
 		},
 		selected: ['cplFilter', 'schematicPdf', 'step', 'projectV3'],
 		outputDir: 'D:/PCB_Out',
@@ -246,6 +254,12 @@ console.log('='.repeat(64));
 	ok('交互式 BOM 未勾选（设置里为 false）', $('opt-interactiveBom').checked === false);
 	ok('工程文件 V2 未勾选', $('opt-projectV2').checked === false);
 	eq('输出目录已带出', $('dir').value, 'D:/PCB_Out');
+	eq('板厚设置已带出', $('board-thickness').value, '0.8');
+	eq('阻焊设置已带出', $('solder-mask').value, 'Purple');
+	eq('字符设置已带出', $('silkscreen').value, 'Black');
+	eq('表面处理已带出', $('surface-finish').value, 'ENIG');
+	eq('阻抗设置已带出', $('impedance-control').checked, true);
+	eq('制造备注已带出', $('manufacturing-notes').value, '50 ohm');
 
 	console.log('\n[1c] 点「开始导出」→ 结果必须回传到主脚本');
 	$('start').click();
@@ -258,6 +272,7 @@ console.log('='.repeat(64));
 
 	ok('结果已写入 delivery-ui-result', payload !== null, `原始=${String(raw)}`);
 	eq('回传的目录正确', payload && payload.outputDir, 'D:/PCB_Out');
+	eq('回传制造参数正确', payload && payload.manufacturing && payload.manufacturing.surfaceFinish, 'ENIG');
 	ok('回传的勾选项与界面一致',
 		!!payload && Array.isArray(payload.selected)
 		&& payload.selected.includes('cplFilter')

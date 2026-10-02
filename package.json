@@ -1,7 +1,7 @@
 {
 	"name": "pcb-delivery-export",
 	"type": "module",
-	"version": "1.7.2",
+	"version": "1.8.0",
 	"description": "One-click PCB manufacturing delivery export for EasyEDA Pro",
 	"author": "kingmacth <kingmacth@gmail.com>",
 	"license": "Apache-2.0",

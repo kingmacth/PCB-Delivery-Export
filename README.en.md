@@ -18,6 +18,13 @@ The extension can filter the Pick & Place file against the BOM and remove unmoun
 
 Output folders and filenames use the **current board name**, so multiple boards in one project receive distinct delivery files.
 
+Fabrication requirements can also be configured before export: board thickness (default 1.6 mm), solder-mask color (default green), silkscreen color (default white), surface finish (default lead-free HASL), impedance control, and custom notes. Two files with identical bilingual content are generated:
+
+- `00_制造要求_请先阅读.txt`
+- `00_FABRICATION_REQUIREMENTS_READ_FIRST.txt`
+
+Both files are also embedded in the Gerber ZIP, and the same information is recorded in `Export_Report.txt`. These are delivery reminders; they do not modify Gerber data or fill the JLCPCB order automatically. Verify every option on the order page before fabrication.
+
 ## Usage
 
 1. Import the `.eext` package in the EasyEDA Pro Extension Manager.

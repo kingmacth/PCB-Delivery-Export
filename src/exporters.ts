@@ -10,6 +10,7 @@ import type { BomCplCrossCheckResult, CplFilterResult, DrcResult, ProjectFormat,
 
 import { analyzeTable, crossCheckBomToCpl, filterCpl } from './bomCpl';
 import { describeError, DOC_TYPE_PDF, EXPORT_API_TIMEOUT_MS, ExportStepError, isUsableFile, logInfo, logWarn, METADATA_TIMEOUT_MS, safeCall, UNIT_MM, withTimeout } from './edaCompat';
+import { embedRequirementsInGerber } from './manufacturing';
 import { getFileExtension, pickExtension, writeFileToDir } from './paths';
 
 /** 一个步骤的执行容器：把「成功/失败/异常」统一收敛为 StepResult */
@@ -31,7 +32,7 @@ function failed(step: string, detail: string): StepResult {
  * 导出 Gerber。
  * 只传文件名 —— 其余参数交给 EasyEDA 默认值，从而**保持官方生成内容**，不自行重新生成。
  */
-export async function exportGerber(dir: string, baseName: string): Promise<StepOutcome<never>> {
+export async function exportGerber(dir: string, baseName: string, requirementsText?: string): Promise<StepOutcome<never>> {
 	const step = 'Gerber';
 	const desiredBase = `${baseName}_Gerber`;
 
@@ -56,7 +57,18 @@ export async function exportGerber(dir: string, baseName: string): Promise<StepO
 	const fileName = `${desiredBase}${ext}`;
 
 	try {
-		await writeFileToDir(dir, fileName, file as File);
+		let output: Blob = file as File;
+		if (requirementsText) {
+			try {
+				output = await embedRequirementsInGerber(file as File, requirementsText);
+			}
+			catch (error) {
+				logWarn(`无法把制造要求写入 Gerber ZIP，仍保留官方原始 Gerber：${describeError(error)}`);
+				await writeFileToDir(dir, fileName, output);
+				return { result: { ...ok(step, fileName), detail: '制造要求未能嵌入 ZIP；请使用导出目录中的双语提醒文件。' } };
+			}
+		}
+		await writeFileToDir(dir, fileName, output);
 		return { result: ok(step, fileName) };
 	}
 	catch (error) {

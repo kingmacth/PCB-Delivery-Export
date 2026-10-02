@@ -36,6 +36,22 @@ export interface DeliverySettings {
 	outputDir: string;
 	/** 记住上次输出目录 */
 	rememberOutputDir: boolean;
+	/** 制造要求（写入双语提醒文件、Gerber ZIP 与导出报告） */
+	boardThicknessMm: string;
+	solderMaskColor: string;
+	silkscreenColor: string;
+	surfaceFinish: string;
+	impedanceControl: boolean;
+	manufacturingNotes: string;
+}
+
+export interface ManufacturingRequirements {
+	boardThicknessMm: string;
+	solderMaskColor: string;
+	silkscreenColor: string;
+	surfaceFinish: string;
+	impedanceControl: boolean;
+	customNotes: string;
 }
 
 /** 单个导出步骤的执行结果 */
@@ -122,4 +138,5 @@ export interface ExportRunResult {
 	 * 却怎么也找不到文件 —— 那是最糟糕的结果。
 	 */
 	criticalNotes: string[];
+	manufacturingRequirements: ManufacturingRequirements;
 }

@@ -43,6 +43,7 @@ import {
 	runDrcCheck,
 } from './exporters';
 import { t } from './i18n';
+import { buildManufacturingRequirements, buildRequirementsBlob, REQUIREMENTS_FILE_EN, REQUIREMENTS_FILE_ZH, requirementsFromSettings } from './manufacturing';
 import { notifyError } from './notify';
 import { createDeliveryDirectory, formatLocalDateTime, sanitizeName, validateBaseDir, writeFileToDir } from './paths';
 import { buildReportBlob, REPORT_FILE_NAME } from './report';
@@ -238,6 +239,7 @@ async function runDelivery(settings: DeliverySettings, dirSource: string): Promi
 		environmentNotes: collectEnvironmentNotes(dirSource),
 		warnings: [],
 		criticalNotes: [],
+		manufacturingRequirements: requirementsFromSettings(settings),
 	};
 
 	let targetDir = '';
@@ -280,6 +282,20 @@ async function runDelivery(settings: DeliverySettings, dirSource: string): Promi
 		 * 平铺降级模式 = `板名_YYYYMMDD`（子目录建不出来时，只能靠文件名区分不同日期的导出）。
 		 */
 		const filePrefix = staged.filePrefix || boardName;
+		const requirementsText = buildManufacturingRequirements(run.manufacturingRequirements, boardName, run.exportDate);
+
+		// ---------- 制造要求：双语内容、双文件名，避免任一语言客户忽略 ----------
+		setExportProgress(16, t('正在写入制造要求…'));
+		const requirementFileNames = (filePrefix === boardName)
+			? [REQUIREMENTS_FILE_ZH, REQUIREMENTS_FILE_EN]
+			: [`${filePrefix}_制造要求_请先阅读.txt`, `${filePrefix}_FABRICATION_REQUIREMENTS_READ_FIRST.txt`];
+		for (const fileName of requirementFileNames) {
+			run.steps.push(await guard('Fabrication Requirements', async () => {
+				await writeFileToDir(targetDir, fileName, buildRequirementsBlob(requirementsText));
+				return { result: { step: 'Fabrication Requirements', status: 'OK' as const, fileName } };
+			}));
+		}
+		run.criticalNotes.push('制造要求已写入双语提醒文件及 Gerber ZIP；提交生产前仍须在下单页面逐项确认。 / Verify all fabrication options on the order page before production.');
 
 		// ---------- DRC ----------
 		if (settings.runDrc) {
@@ -307,7 +323,7 @@ async function runDelivery(settings: DeliverySettings, dirSource: string): Promi
 		// ---------- 制造文件：Gerber ----------
 		if (settings.exportGerber) {
 			setExportProgress(22, t('正在导出 Gerber…'));
-			run.steps.push(await guard('Gerber', () => exportGerber(targetDir, filePrefix)));
+			run.steps.push(await guard('Gerber', () => exportGerber(targetDir, filePrefix, requirementsText)));
 		}
 
 		// ---------- 制造文件：BOM ----------
