@@ -25,6 +25,26 @@ Gerber、BOM 和坐标文件（CPL / Pick & Place）为默认必选项。还可�
 
 这两份文件也会放入 Gerber ZIP，并将相同信息写进 `Export_Report.txt`。它们用于交付提醒，不会修改 Gerber 或自动填写嘉立创订单；投产前仍须在下单页面逐项确认。
 
+## 功能演示
+
+### 1. 从 PCB 顶部菜单一键启动
+
+打开需要交付的 PCB，选择 **PCB 交付 → 一键导出**。
+
+![从 EasyEDA Pro 的 PCB 交付菜单启动一键导出](./images/demo-menu.png)
+
+### 2. 选择导出内容与制造要求
+
+Gerber、BOM、坐标文件始终导出；可以组合选择 PDF、STEP、交互式 BOM、工程文件和 DRC，并设置板厚、颜色、表面处理、阻抗控制及自定义备注。
+
+![PCB Delivery Export 导出设置及制造要求界面](./images/demo-settings.png)
+
+### 3. 查看实时导出进度
+
+导出过程中显示当前步骤与完成百分比，避免长时间处理时无响应提示。
+
+![PCB Delivery Export 实时导出进度](./images/demo-progress.png)
+
 ## 使用方法
 
 1. 在 EasyEDA Pro 的扩展管理器中导入 `.eext` 安装包。

@@ -25,6 +25,26 @@ Fabrication requirements can also be configured before export: board thickness (
 
 Both files are also embedded in the Gerber ZIP, and the same information is recorded in `Export_Report.txt`. These are delivery reminders; they do not modify Gerber data or fill the JLCPCB order automatically. Verify every option on the order page before fabrication.
 
+## Feature Demo
+
+### 1. Start from the PCB menu
+
+Open the PCB to deliver, then choose **PCB Delivery → Export Delivery Package**.
+
+![Start one-click export from the EasyEDA Pro PCB Delivery menu](./images/demo-menu.png)
+
+### 2. Select outputs and fabrication requirements
+
+Gerber, BOM, and Pick & Place are always exported. Combine PDF, STEP, interactive BOM, project source, and DRC as needed, then specify thickness, colors, surface finish, impedance control, and custom notes.
+
+![PCB Delivery Export settings and fabrication requirements](./images/demo-settings.png)
+
+### 3. Follow live export progress
+
+The progress view shows the active step and completion percentage during longer exports.
+
+![PCB Delivery Export live progress](./images/demo-progress.png)
+
 ## Usage
 
 1. Import the `.eext` package in the EasyEDA Pro Extension Manager.
