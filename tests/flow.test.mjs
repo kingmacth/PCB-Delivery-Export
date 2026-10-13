@@ -165,14 +165,26 @@ const tick = () => new Promise(r => setImmediate(r));
 
 /** 通用：环境 / 存储 / 工程 / 制造文件 的 handler（各场景共用） */
 function baseHandlers(overrides = {}) {
+	let activeDocument = { documentType: 3, uuid: 'pcb-demo', tabId: 'tab-pcb' };
 	return {
 		'sys_Environment.isClient': () => true,
 		'sys_Environment.getEditorCurrentVersion': () => '3.2.15-test',
 		'sys_I18n.text': args => args[0],
 		'sys_Storage.getExtensionUserConfig': () => undefined,
 		'sys_Storage.setExtensionUserConfig': () => Promise.resolve(true),
-		'dmt_SelectControl.getCurrentDocumentInfo': () => Promise.resolve({ documentType: 3, uuid: 'pcb-demo', tabId: 'tab-pcb' }),
-		'dmt_Board.getCurrentBoardInfo': () => Promise.resolve({ name: 'Demo Board' }),
+		'dmt_SelectControl.getCurrentDocumentInfo': () => Promise.resolve(activeDocument),
+		'dmt_Board.getCurrentBoardInfo': () => Promise.resolve({
+			name: 'Demo Board',
+			pcb: { uuid: 'pcb-demo' },
+			schematic: { uuid: 'sch-demo', page: [{ uuid: 'page-demo', parentSchematicUuid: 'sch-demo' }] },
+		}),
+		'dmt_EditorControl.openDocument': () => Promise.resolve('tab-schematic'),
+		'dmt_EditorControl.activateDocument': ([tabId]) => {
+			activeDocument = tabId === 'tab-pcb'
+				? { documentType: 3, uuid: 'pcb-demo', tabId }
+				: { documentType: 1, uuid: 'page-demo', tabId };
+			return Promise.resolve(true);
+		},
 		'dmt_Pcb.getPcbInfo': () => Promise.resolve({ name: 'PCB Document', parentBoardName: 'Demo Board' }),
 		'dmt_Project.getCurrentProjectInfo': () => Promise.resolve({ friendlyName: 'Demo Project', name: 'demo-project' }),
 		'pcb_Drc.check': () => Promise.resolve([]),

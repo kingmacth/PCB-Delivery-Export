@@ -375,117 +375,85 @@ export async function exportInteractiveBom(dir: string, baseName: string): Promi
 /** EDMT_EditorDocumentType.SCHEMATIC_PAGE === 1 */
 const DOC_TYPE_SCHEMATIC_PAGE = 1 as EDMT_EditorDocumentType.SCHEMATIC_PAGE;
 
-/**
- * 导出全部原理图为**单个合并 PDF**。
- *
- * 使用 `sch_ManufactureData.getExportDocumentFile` 的
- * `object='All Schematic'` + `outputMethod='Merged sheet'` + `range='All'`，
- * 由 EasyEDA 自身完成合并，**不逐页导出后再自行拼接**。
- *
- * 若当前焦点不在原理图上，则先打开首个原理图图页再导出，导出后恢复原标签页。
- * 该降级过程**不会修改任何设计数据**。
- */
+/** 按 PCB UUID 查找所属板，绝不依赖名称相似度或工程树顺序。 */
+async function resolvePcbSchematic(pcbUuid: string): Promise<IDMT_SchematicItem> {
+	let board: IDMT_BoardItem | undefined;
+	try {
+		const current = await withTimeout(eda.dmt_Board.getCurrentBoardInfo(), METADATA_TIMEOUT_MS, 'getCurrentBoardInfo(PDF)');
+		if (current?.pcb?.uuid === pcbUuid)
+			board = current;
+	}
+	catch { /* 旧客户端允许通过全板列表解析 */ }
+	if (!board) {
+		const boards = await withTimeout(eda.dmt_Board.getAllBoardsInfo(), METADATA_TIMEOUT_MS, 'getAllBoardsInfo(PDF)');
+		const matches = boards.filter(item => item.pcb?.uuid === pcbUuid);
+		if (matches.length === 1)
+			board = matches[0];
+	}
+	if (!board?.schematic?.uuid)
+		throw new Error('无法确认当前 PCB 关联的原理图，已停止 PDF 导出，避免导出其他板或版本。');
+	const schematic = board.schematic;
+	if (!Array.isArray(schematic.page) || schematic.page.length === 0) {
+		const pages = await withTimeout(eda.dmt_Schematic.getAllSchematicPagesInfo(), METADATA_TIMEOUT_MS, 'getAllSchematicPagesInfo(PDF)');
+		return { ...schematic, page: pages.filter(page => page.parentSchematicUuid === schematic.uuid) };
+	}
+	return schematic;
+}
+
+/** 只合并当前 PCB 所属原理图的所有页；无论成败都恢复 PCB 标签页。 */
 export async function exportSchematicPdf(dir: string, baseName: string): Promise<StepOutcome<never>> {
 	const step = 'Schematic PDF';
 	const fileName = `${baseName}_Schematic.pdf`;
+	let originalTabId: string | undefined;
+	let switched = false;
+	try {
+		const original = await withTimeout(eda.dmt_SelectControl.getCurrentDocumentInfo(), METADATA_TIMEOUT_MS, 'getCurrentDocumentInfo(PDF)');
+		if (original?.documentType !== 3 || !original.uuid || !original.tabId)
+			throw new Error('无法确认当前 PCB 文档及恢复标签页，已停止 PDF 导出。');
+		originalTabId = original.tabId;
+		const schematic = await resolvePcbSchematic(original.uuid);
+		const page = schematic.page.find(item => item.uuid && item.parentSchematicUuid === schematic.uuid);
+		if (!page)
+			throw new Error('当前 PCB 关联的原理图没有可用图页，已停止 PDF 导出。');
 
-	const runExport = async (): Promise<File | undefined> => {
-		return eda.sch_ManufactureData.getExportDocumentFile(
+		const tabId = await withTimeout(eda.dmt_EditorControl.openDocument(page.uuid), METADATA_TIMEOUT_MS, 'openDocument(associated schematic)');
+		if (!tabId)
+			throw new Error('无法打开当前 PCB 关联的原理图图页。');
+		switched = true;
+		const activated = await withTimeout(eda.dmt_EditorControl.activateDocument(tabId), METADATA_TIMEOUT_MS, 'activateDocument(associated schematic)');
+		if (activated === false)
+			throw new Error('无法激活当前 PCB 关联的原理图图页。');
+		const focused = await withTimeout(eda.dmt_SelectControl.getCurrentDocumentInfo(), METADATA_TIMEOUT_MS, 'verifySchematicContext(PDF)');
+		if (focused?.documentType !== DOC_TYPE_SCHEMATIC_PAGE || focused.uuid !== page.uuid)
+			throw new Error('原理图焦点校验失败，已停止 PDF 导出，避免导出其他版本。');
+		logInfo(`PDF source: PCB=${original.uuid}, schematic=${schematic.uuid}, page=${page.uuid}`);
+
+		const call = await safeCall(step, () => eda.sch_ManufactureData.getExportDocumentFile(
 			`${baseName}_Schematic`,
 			DOC_TYPE_PDF,
-			{
-				theme: 'Default',
-				lineWidth: 'Default',
-				displayAttributesAsMenu: false,
-				size: 'Original Size',
-			},
-			'All Schematic',
+			{ theme: 'Default', lineWidth: 'Default', displayAttributesAsMenu: false, size: 'Original Size' },
+			'Current Schematic',
 			{ range: 'All', outputMethod: 'Merged sheet' },
-		);
-	};
-
-	// 1) 记录当前文档，便于失败时恢复
-	let originalTabId: string | undefined;
-	try {
-		const current = await withTimeout(eda.dmt_SelectControl.getCurrentDocumentInfo(), METADATA_TIMEOUT_MS, 'getCurrentDocumentInfo(PDF)');
-		originalTabId = current?.tabId;
-	}
-	catch {
-		/* ignore */
-	}
-
-	// 2) 首次尝试（当前上下文可能已可用）
-	let call = await safeCall(step, runExport);
-
-	// 3) 若首次失败且当前不在原理图页，则切到首个原理图页重试
-	if ((!call.ok || !(await isUsableFile(call.value))) && !(await isInSchematicContext())) {
-		const switched = await tryOpenFirstSchematicPage();
-		if (switched) {
-			logInfo('Schematic context switched for PDF export, retrying...');
-			call = await safeCall(step, runExport);
-		}
-	}
-
-	// 4) 恢复原标签页（无论成败）
-	if (originalTabId) {
-		try {
-			await withTimeout(eda.dmt_EditorControl.activateDocument(originalTabId), METADATA_TIMEOUT_MS, 'activateDocument(restore)');
-		}
-		catch {
-			/* 恢复失败不影响导出结果 */
-		}
-	}
-
-	if (!call.ok)
-		return { result: failed(step, `导出失败：${call.error}`) };
-
-	const file = call.value;
-	if (!(await isUsableFile(file))) {
-		return {
-			result: failed(
-				step,
-				'API 返回 null / 空文件。请确认工程内存在原理图，且当前版本支持「导出 → 原理图 PDF」。',
-			),
-		};
-	}
-
-	try {
-		await writeFileToDir(dir, fileName, file as File);
+		));
+		if (!call.ok)
+			throw new Error(`导出失败：${call.error}`);
+		if (!(await isUsableFile(call.value)))
+			throw new Error('当前 PCB 关联原理图的 PDF API 返回 null / 空文件。');
+		await writeFileToDir(dir, fileName, call.value as File);
 		return { result: ok(step, fileName) };
 	}
 	catch (error) {
 		return { result: failed(step, describeError(error)) };
 	}
-}
-
-/** 当前焦点是否在原理图页上 */
-async function isInSchematicContext(): Promise<boolean> {
-	try {
-		const current = await withTimeout(eda.dmt_SelectControl.getCurrentDocumentInfo(), METADATA_TIMEOUT_MS, 'getCurrentDocumentInfo(schematic)');
-		return current?.documentType === DOC_TYPE_SCHEMATIC_PAGE;
-	}
-	catch {
-		return false;
-	}
-}
-
-/** 打开工程内第一个原理图图页；成功返回 true */
-async function tryOpenFirstSchematicPage(): Promise<boolean> {
-	try {
-		const pages = await withTimeout(eda.dmt_Schematic.getAllSchematicPagesInfo(), METADATA_TIMEOUT_MS, 'getAllSchematicPagesInfo');
-		if (!Array.isArray(pages) || pages.length === 0)
-			return false;
-
-		const tabId = await withTimeout(eda.dmt_EditorControl.openDocument(pages[0].uuid), METADATA_TIMEOUT_MS, 'openDocument(schematic)');
-		if (!tabId)
-			return false;
-
-		await withTimeout(eda.dmt_EditorControl.activateDocument(tabId), METADATA_TIMEOUT_MS, 'activateDocument(schematic)');
-		return true;
-	}
-	catch (error) {
-		logWarn(`tryOpenFirstSchematicPage failed: ${describeError(error)}`);
-		return false;
+	finally {
+		if (switched && originalTabId) {
+			try {
+				await withTimeout(eda.dmt_EditorControl.activateDocument(originalTabId), METADATA_TIMEOUT_MS, 'activateDocument(restore PCB)');
+			}
+			catch (error) {
+				logWarn(`恢复 PCB 标签页失败：${describeError(error)}`);
+			}
+		}
 	}
 }
 

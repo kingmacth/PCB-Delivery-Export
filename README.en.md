@@ -18,6 +18,8 @@ The extension can filter the Pick & Place file against the BOM and remove unmoun
 
 Output folders and filenames use the **current board name**, so multiple boards in one project receive distinct delivery files.
 
+The schematic PDF contains all sheets of the schematic linked to the active PCB. In projects with multiple boards or revisions, schematics are selected by their PCB association. PDF export reports a failure if that association cannot be verified.
+
 Fabrication requirements can also be configured before export: board thickness (default 1.6 mm), solder-mask color (default green), silkscreen color (default white), surface finish (default lead-free HASL), impedance control, and custom notes. Two files with identical bilingual content are generated:
 
 - `00_制造要求_请先阅读.txt`

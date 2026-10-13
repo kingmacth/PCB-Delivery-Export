@@ -17,6 +17,7 @@ import { analyzeTable, crossCheckBomToCpl, filterCpl } from '../src/bomCpl';
 import { CAPABILITY_KEYS, getCapabilities, invalidateCapabilities, isVersionAtLeast, missingCapabilities, parseEdaVersion } from '../src/capabilities';
 import { difference, mergeDesignators, parseDesignators } from '../src/designators';
 import { ApiTimeoutError, attempt, softCall, withTimeout } from '../src/edaCompat';
+import { exportSchematicPdf } from '../src/exporters';
 import { buildManufacturingRequirements, embedRequirementsInGerber, REQUIREMENTS_FILE_EN, REQUIREMENTS_FILE_ZH } from '../src/manufacturing';
 import { dirnameOf, formatLocalDateYmd, joinPath, sanitizeName, validateBaseDir } from '../src/paths';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../src/settings';
@@ -347,6 +348,81 @@ async function main(): Promise<void> {
 	eq('CSV 过滤 final', csvOutcome.result.finalCount, 2);
 	check('CSV 过滤保留表头', (await csvOutcome.blob.text()).startsWith('Designator,Mid X'));
 	check('CSV 过滤移除 R99', !(await csvOutcome.blob.text()).includes('R99'));
+
+	// 多板工程：V1.0 排在前面，当前 PCB 为 V1.1，且旧原理图曾被打开。
+	const savedEda = (globalThis as any).eda;
+	for (const mode of ['success', 'unknown', 'wrong-focus', 'api-error', 'write-error']) {
+		let active = { documentType: 3, uuid: 'pcb-v11', tabId: 'pcb-tab' };
+		let opened = '';
+		let exported = 0;
+		let written = 0;
+		let scope = '';
+		let restored = false;
+		const schematic = {
+			uuid: 'sch-v11',
+			page: [
+				{ uuid: 'v11-p1', parentSchematicUuid: 'sch-v11' },
+				{ uuid: 'v11-p2', parentSchematicUuid: 'sch-v11' },
+			],
+		};
+		(globalThis as any).eda = {
+			dmt_SelectControl: { getCurrentDocumentInfo: async () => active },
+			dmt_Board: {
+				getCurrentBoardInfo: async () => ({ pcb: { uuid: 'pcb-v10' }, schematic: { uuid: 'sch-v10' } }),
+				getAllBoardsInfo: async () => mode === 'unknown'
+					? []
+					: [
+							{ pcb: { uuid: 'pcb-v10' }, schematic: { uuid: 'sch-v10' } },
+							{ pcb: { uuid: 'pcb-v11' }, schematic },
+						],
+			},
+			dmt_EditorControl: {
+				openDocument: async (uuid: string) => {
+					opened = uuid;
+					return 'sch-tab';
+				},
+				activateDocument: async (tabId: string) => {
+					restored = tabId === 'pcb-tab';
+					active = restored
+						? { documentType: 3, uuid: 'pcb-v11', tabId }
+						: { documentType: 1, uuid: mode === 'wrong-focus' ? 'v10-p1' : opened, tabId };
+					return true;
+				},
+			},
+			sch_ManufactureData: {
+				getExportDocumentFile: async (_name: string, _type: unknown, _params: unknown, object: string, options: any) => {
+					exported++;
+					scope = object;
+					eq('PDF 合并关联原理图的全部图页', options, { range: 'All', outputMethod: 'Merged sheet' });
+					if (mode === 'api-error')
+						throw new Error('PDF failed');
+					return new Blob(['PDF V1.1']);
+				},
+			},
+			sys_FileSystem: { saveFileToFileSystem: async () => {
+				if (mode === 'write-error')
+					throw new Error('Write failed');
+				written++;
+				return true;
+			} },
+		};
+		const result = await exportSchematicPdf('D:/Output', 'Sender V1.1');
+		if (mode === 'success') {
+			eq('多板 PDF 选择 PCB UUID 对应的 V1.1 图页', opened, 'v11-p1');
+			eq('PDF 只导出当前关联原理图', scope, 'Current Schematic');
+			eq('正确版本 PDF 写入一次', written, 1);
+			eq('正确版本 PDF 成功', result.result.status, 'OK');
+		}
+		else {
+			eq(`PDF ${mode} 明确失败`, result.result.status, 'FAILED');
+			eq(`PDF ${mode} 不写错误文件`, written, 0);
+			if (mode === 'unknown' || mode === 'wrong-focus')
+				eq(`PDF ${mode} 不调用导出 API`, exported, 0);
+		}
+		if (mode !== 'unknown')
+			eq(`PDF ${mode} 恢复 PCB 标签页`, restored, true);
+	}
+	(globalThis as any).eda = savedEda;
 
 	// ================= 6. 设置模型：必选项强制 + 旧版迁移 =================
 	console.log('\n[6] 设置模型 normalizeSettings');
